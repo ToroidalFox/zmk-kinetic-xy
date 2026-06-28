@@ -1,0 +1,4 @@
+zephyr_library()
+zephyr_library_include_directories(include)
+zephyr_library_sources(src/pointing/input_processor_kinetic_xy.c)
+zephyr_library_sources_ifdef(CONFIG_ZMK_KINETIC_XY_TOGGLE src/behaviors/behavior_kinetic_xy_toggle.c)

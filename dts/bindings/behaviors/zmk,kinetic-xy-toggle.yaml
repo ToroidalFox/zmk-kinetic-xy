@@ -1,0 +1,10 @@
+description: Toggle kinetic XY processing for a given slot
+
+compatible: "zmk,behavior-kinetic-xy-toggle"
+
+properties:
+  slot:
+    type: int
+    required: true
+    description: |
+      Kinetic XY slot index to toggle (0-7).

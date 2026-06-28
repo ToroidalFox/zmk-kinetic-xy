@@ -1,0 +1,13 @@
+config ZMK_KINETIC_XY_TOGGLE
+	bool "Kinetic XY Toggle"
+	default y
+	help
+	  Enable the ability to toggle kinetic XY processing on a
+	  per-slot basis.
+
+config ZMK_KINETIC_XY_TOGGLE_STATES
+	int "Kinetic XY Toggle States"
+	default 8
+	depends on ZMK_KINETIC_XY_TOGGLE
+	help
+	  Number of slots to set toggle states.

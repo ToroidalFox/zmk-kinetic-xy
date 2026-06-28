@@ -1,0 +1,6 @@
+name: zmk-kinetic-xy
+build:
+  cmake: .
+  kconfig: Kconfig
+  settings:
+    dts_root: .

@@ -1,0 +1,49 @@
+description: Kinetic XY input processor with per-instance configuration
+
+compatible: "zmk,input-processor-kinetic-xy"
+
+include: ip_zero_param.yaml
+
+properties:
+  slot:
+    type: int
+    required: true
+    description: |
+      Slot index for this kinetic XY instance. Used to identify
+      the instance for toggling.
+
+  event-interval:
+    type: int
+    required: true
+    description: |
+      Interval in milliseconds between kinetic simulation ticks.
+
+  decay-mode:
+    type: int
+    default: 0
+    description: |
+      Function to use for decay calculation.
+      Decay function.
+      0 = linear, 1 = squared, 2 = exponential
+  decay-rate:
+    type: int
+    required: true
+    description: |
+      Decay rate value used by decay function per `event-interval`.
+  decay-factor:
+    type: int 
+    required: true
+    description: |
+      Decay factor value used by decay function.
+
+  clamp-threshold:
+    type: int
+    required: true
+    default: 1
+    description: |
+      Velocity threshold below which kinetic movement stops.
+  trigger-threshold:
+    type: int
+    required: true
+    description:
+      Minimum speed needed to start kinetic movement.

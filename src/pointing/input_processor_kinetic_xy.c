@@ -55,6 +55,10 @@ static void input_processor_kinetic_xy_toggle(uint8_t slot) {
   kinetic_xy_toggle_slots[slot] = !kinetic_xy_toggle_slots[slot];
 }
 
+static int64_t delta_ticks_to_ns(int64_t t) {
+  return CLAMP(k_ticks_to_ns_near64(t), 0, NSEC_PER_SEC);
+}
+
 static bool is_above_trigger_threshold(
     const struct input_processor_kinetic_xy_config *config,
     const struct input_processor_kinetic_xy_data *data) {
@@ -73,7 +77,25 @@ is_above_clamp_threshold(const struct input_processor_kinetic_xy_config *config,
 }
 
 static void kinetic_xy_handle_work(struct k_work *work) {
-  // TODO: implement
+  struct k_work_delayable *_work = k_work_delayable_from_work(work);
+  struct input_processor_kinetic_xy_data *data =
+      CONTAINER_OF(_work, struct input_processor_kinetic_xy_data, tick_work);
+  const struct device *device = data->device;
+  const struct input_processor_kinetic_xy_config *config = device->config;
+  int64_t now = k_uptime_ticks();
+  int64_t delta_ticks = now - data->event_time;
+  int64_t delta_ns = delta_ticks_to_ns(delta_ticks);
+
+  int64_t decay_rate = CLAMP(config->decay_rate, 0, 1000);
+  data->x.value = data->x.value * (1000 - decay_rate) / 1000;
+  data->y.value = data->y.value * (1000 - decay_rate) / 1000;
+
+  if (is_above_clamp_threshold(config, data)) { // FIXME: condition
+    k_work_schedule(&data->tick_work, K_MSEC(config->event_interval));
+  } else {
+    data->x = (struct axis){.value = 0};
+    data->y = (struct axis){.value = 0};
+  }
 }
 
 static int kinetic_xy_init(const struct device *device) {
@@ -130,8 +152,7 @@ marker_relative_input:
       data->x.value = 0;
       data->x.unit = Velocity;
     } else {
-      int64_t delta_ns =
-          CLAMP(k_ticks_to_ns_near64(delta_ticks), 0, NSEC_PER_SEC);
+      int64_t delta_ns = delta_ticks_to_ns(delta_ticks);
 
       if (delta_ns == 0) {
         LOG_DBG("delta_ns is 0");
@@ -147,8 +168,7 @@ marker_relative_input:
       data->y.value = 0;
       data->y.unit = Velocity;
     } else {
-      int64_t delta_ns =
-          CLAMP(k_ticks_to_ns_near64(delta_ticks), 0, NSEC_PER_SEC);
+      int64_t delta_ns = delta_ticks_to_ns(delta_ticks);
 
       if (delta_ns == 0) {
         LOG_DBG("delta_ns is 0");

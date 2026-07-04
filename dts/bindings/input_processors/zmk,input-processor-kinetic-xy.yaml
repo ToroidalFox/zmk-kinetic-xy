@@ -22,7 +22,7 @@ properties:
     type: int
     required: true
     description: |
-      Decay rate value used by decay function per `event-interval`.
+      Decay rate value used by decay function per `event-interval` in per mille.
 
   clamp-threshold:
     type: int

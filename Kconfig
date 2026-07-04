@@ -7,7 +7,7 @@ config ZMK_KINETIC_XY_TOGGLE
 
 config ZMK_KINETIC_XY_TOGGLE_STATES
 	int "Kinetic XY Toggle States"
-	default 8
+	default 4
 	depends on ZMK_KINETIC_XY_TOGGLE
 	help
 	  Number of slots to set toggle states.

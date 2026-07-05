@@ -55,8 +55,34 @@ static void input_processor_kinetic_xy_toggle(uint8_t slot) {
   kinetic_xy_toggle_slots[slot] = !kinetic_xy_toggle_slots[slot];
 }
 
-static int64_t delta_ticks_to_ns(int64_t t) {
-  return CLAMP(k_ticks_to_ns_near64(t), 0, NSEC_PER_SEC);
+static inline int32_t delta_ticks_to_us(int64_t t) {
+  return CLAMP(k_ticks_to_us_near64(t), 0, USEC_PER_SEC);
+}
+
+typedef int32_t i24f8;
+#define I24F8_SHIFT 8
+#define I24F8_ONE (1 << 8)
+#define I24F8_HALF (1 << 7)
+/// Fixed point multiplication with round away from zero.
+static inline i24f8 i24f8_mul(i24f8 a, i24f8 b) {
+  int64_t c = ((int64_t)a * (int64_t)b + I24F8_HALF) >> I24F8_SHIFT;
+  c += c < 0 ? -I24F8_HALF : I24F8_HALF;
+  c >>= I24F8_SHIFT;
+  return CLAMP(c, INT32_MIN, INT32_MAX);
+}
+/// Fixed point division with round away from zero.
+static inline i24f8 i24f8_div(i24f8 a, i24f8 b) {
+  //
+  int64_t dividend = (int64_t)a << I24F8_SHIFT;
+  int64_t half = (int64_t)b / 2;
+  dividend += (dividend < 0) == (half < 0) ? half : -half;
+  int64_t div_result = dividend / b;
+  return CLAMP(div_result, INT32_MIN, INT32_MAX);
+}
+static inline i24f8 i32_into_i24f8(int32_t val) { return val << I24F8_SHIFT; }
+static inline i24f8 vel_from_dpdt(int32_t dp, int32_t dt_us) {
+  return i24f8_mul(i32_into_i24f8(dp), i24f8_div(i32_into_i24f8(USEC_PER_SEC),
+                                                 i32_into_i24f8(dt_us)));
 }
 
 static bool is_above_trigger_threshold(
@@ -84,7 +110,7 @@ static void kinetic_xy_handle_work(struct k_work *work) {
   const struct input_processor_kinetic_xy_config *config = device->config;
   int64_t now = k_uptime_ticks();
   int64_t delta_ticks = now - data->event_time;
-  int64_t delta_ns = delta_ticks_to_ns(delta_ticks);
+  int64_t delta_us = delta_ticks_to_us(delta_ticks);
 
   int64_t decay_rate = CLAMP(config->decay_rate, 0, 1000);
   data->x.value = data->x.value * (1000 - decay_rate) / 1000;
@@ -152,13 +178,13 @@ marker_relative_input:
       data->x.value = 0;
       data->x.unit = Velocity;
     } else {
-      int64_t delta_ns = delta_ticks_to_ns(delta_ticks);
+      int64_t delta_us = delta_ticks_to_us(delta_ticks);
 
-      if (delta_ns == 0) {
-        LOG_DBG("delta_ns is 0");
+      if (delta_us == 0) {
+        LOG_DBG("delta_us is 0");
         return ZMK_INPUT_PROC_CONTINUE;
       }
-      data->x.value = i64_sat_mul(event_value, NSEC_PER_SEC) / delta_ns;
+      data->x.value = vel_from_dpdt(event_value, delta_us);
     }
   }
   if (event_code == INPUT_REL_Y) {
@@ -168,13 +194,13 @@ marker_relative_input:
       data->y.value = 0;
       data->y.unit = Velocity;
     } else {
-      int64_t delta_ns = delta_ticks_to_ns(delta_ticks);
+      int64_t delta_us = delta_ticks_to_us(delta_ticks);
 
-      if (delta_ns == 0) {
-        LOG_DBG("delta_ns is 0");
+      if (delta_us == 0) {
+        LOG_DBG("delta_us is 0");
         return ZMK_INPUT_PROC_CONTINUE;
       }
-      data->y.value = i64_sat_mul(event_value, NSEC_PER_SEC) / delta_ns;
+      data->y.value = vel_from_dpdt(event_value, delta_us);
     }
   }
 

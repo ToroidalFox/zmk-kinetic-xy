@@ -18,23 +18,11 @@ properties:
     description: |
       Interval in milliseconds between kinetic simulation ticks.
 
-  decay-mode:
-    type: int
-    default: 0
-    description: |
-      Function to use for decay calculation.
-      Decay function.
-      0 = linear, 1 = squared, 2 = exponential
   decay-rate:
     type: int
     required: true
     description: |
       Decay rate value used by decay function per `event-interval`.
-  decay-factor:
-    type: int 
-    required: true
-    description: |
-      Decay factor value used by decay function.
 
   clamp-threshold:
     type: int

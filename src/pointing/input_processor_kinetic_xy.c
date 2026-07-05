@@ -19,32 +19,11 @@ int64_t i64_sat_mul(int64_t a, int64_t b) {
   return result;
 }
 
-// From ZMK `behavior_input_two_axis.c`
-#if CONFIG_MINIMAL_LIBC
-static float powf(float base, float exponent) {
-  float power = 1.0f;
-  for (; exponent >= 1.0f; exponent--) {
-    power = power * base;
-  }
-  return power;
-}
-#else
-#include <math.h>
-#endif
-
-enum DecayMode {
-  Linear = 0,
-  Squared = 1,
-  Exponential = 2,
-};
-
 struct input_processor_kinetic_xy_config {
   uint8_t slot;
   uint32_t event_interval;
 
-  enum DecayMode decay_mode;
   int32_t decay_rate;
-  int32_t decay_factor;
 
   int32_t clamp_threshold;
   int32_t trigger_threshold;

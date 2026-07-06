@@ -2,6 +2,7 @@
 
 #include <drivers/input_processor.h>
 #include <zephyr/device.h>
+#include <zephyr/input/input.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/time_units.h>
@@ -35,7 +36,8 @@ enum Unit {
 };
 
 struct axis {
-  int64_t value;
+  int32_t value;
+  int32_t rem;
   enum Unit unit; // unit when next event comes in rather than right now
   int64_t time;
 };
@@ -59,46 +61,46 @@ static inline int32_t delta_ticks_to_us(int64_t t) {
   return CLAMP(k_ticks_to_us_near64(t), 0, USEC_PER_SEC);
 }
 
-typedef int32_t i24f8;
-#define I24F8_SHIFT 8
-#define I24F8_ONE (1 << 8)
-#define I24F8_HALF (1 << 7)
+typedef int32_t i22f10;
+#define I22F10_SHIFT 10
+#define I22F10_ONE (1 << 10)
+#define I22F10_HALF (1 << 9)
 /// Fixed point multiplication with round away from zero.
-static inline i24f8 i24f8_mul(i24f8 a, i24f8 b) {
-  int64_t c = ((int64_t)a * (int64_t)b + I24F8_HALF) >> I24F8_SHIFT;
-  c += c < 0 ? -I24F8_HALF : I24F8_HALF;
-  c >>= I24F8_SHIFT;
+static inline i22f10 i22f10_mul(i22f10 a, i22f10 b) {
+  int64_t c = ((int64_t)a * (int64_t)b + I22F10_HALF) >> I22F10_SHIFT;
+  c += c < 0 ? -I22F10_HALF : I22F10_HALF;
+  c >>= I22F10_SHIFT;
   return CLAMP(c, INT32_MIN, INT32_MAX);
 }
 /// Fixed point division with round away from zero.
-static inline i24f8 i24f8_div(i24f8 a, i24f8 b) {
-  //
-  int64_t dividend = (int64_t)a << I24F8_SHIFT;
+static inline i22f10 i22f10_div(i22f10 a, i22f10 b) {
+  int64_t dividend = (int64_t)a << I22F10_SHIFT;
   int64_t half = (int64_t)b / 2;
   dividend += (dividend < 0) == (half < 0) ? half : -half;
   int64_t div_result = dividend / b;
   return CLAMP(div_result, INT32_MIN, INT32_MAX);
 }
-static inline i24f8 i32_into_i24f8(int32_t val) { return val << I24F8_SHIFT; }
-static inline i24f8 vel_from_dpdt(int32_t dp, int32_t dt_us) {
-  return i24f8_mul(i32_into_i24f8(dp), i24f8_div(i32_into_i24f8(USEC_PER_SEC),
-                                                 i32_into_i24f8(dt_us)));
+static inline i22f10 i22f10_from(int32_t val) { return val << I22F10_SHIFT; }
+static inline int32_t i32_from(i22f10 val) { return val / I22F10_ONE; }
+static inline i22f10 vel_from_dpdt(int32_t dp, int32_t dt_us) {
+  return CLAMP(((int64_t)dp << I22F10_SHIFT) * USEC_PER_SEC / (int64_t)dt_us,
+               INT32_MIN, INT32_MAX);
 }
 
 static bool is_above_trigger_threshold(
     const struct input_processor_kinetic_xy_config *config,
     const struct input_processor_kinetic_xy_data *data) {
   int32_t threshold = config->trigger_threshold;
-  int32_t x_vel = data->x.value;
-  int32_t y_vel = data->y.value;
+  int32_t x_vel = i32_from(data->x.value);
+  int32_t y_vel = i32_from(data->y.value);
   return threshold * threshold <= x_vel * x_vel + y_vel * y_vel;
 }
 static bool
 is_above_clamp_threshold(const struct input_processor_kinetic_xy_config *config,
                          const struct input_processor_kinetic_xy_data *data) {
   int32_t threshold = config->clamp_threshold;
-  int32_t x_vel = data->x.value;
-  int32_t y_vel = data->y.value;
+  int32_t x_vel = i32_from(data->x.value);
+  int32_t y_vel = i32_from(data->y.value);
   return threshold * threshold <= x_vel * x_vel + y_vel * y_vel;
 }
 
@@ -108,19 +110,27 @@ static void kinetic_xy_handle_work(struct k_work *work) {
       CONTAINER_OF(_work, struct input_processor_kinetic_xy_data, tick_work);
   const struct device *device = data->device;
   const struct input_processor_kinetic_xy_config *config = device->config;
-  int64_t now = k_uptime_ticks();
-  int64_t delta_ticks = now - data->event_time;
-  int64_t delta_us = delta_ticks_to_us(delta_ticks);
 
-  int64_t decay_rate = CLAMP(config->decay_rate, 0, 1000);
+  int32_t decay_rate = CLAMP(config->decay_rate, 0, 1000);
   data->x.value = data->x.value * (1000 - decay_rate) / 1000;
   data->y.value = data->y.value * (1000 - decay_rate) / 1000;
 
-  if (is_above_clamp_threshold(config, data)) { // FIXME: condition
+  if (is_above_clamp_threshold(config, data)) {
+    i22f10 dx = data->x.value * config->event_interval / 1000 + data->x.rem;
+    i22f10 dy = data->y.value * config->event_interval / 1000 + data->y.rem;
+    int32_t dx_int = i32_from(dx);
+    int32_t dy_int = i32_from(dy);
+    data->x.rem = (dx - (i22f10_from(dx_int)));
+    data->y.rem = (dy - (i22f10_from(dy_int)));
+    if (dx_int != 0)
+      input_report_rel(device, INPUT_REL_X, dx_int, dy_int == 0, K_NO_WAIT);
+    if (dy_int != 0)
+      input_report_rel(device, INPUT_REL_Y, dy_int, true, K_NO_WAIT);
+
     k_work_schedule(&data->tick_work, K_MSEC(config->event_interval));
   } else {
-    data->x = (struct axis){.value = 0};
-    data->y = (struct axis){.value = 0};
+    data->x = (struct axis){.value = 0, .rem = 0};
+    data->y = (struct axis){.value = 0, .rem = 0};
   }
 }
 
@@ -130,8 +140,10 @@ static int kinetic_xy_init(const struct device *device) {
   int64_t now = k_uptime_ticks();
 
   data->device = device;
-  data->x = (struct axis){.value = 0, .unit = Displacement, .time = now};
-  data->y = (struct axis){.value = 0, .unit = Displacement, .time = now};
+  data->x =
+      (struct axis){.value = 0, .rem = 0, .unit = Displacement, .time = now};
+  data->y =
+      (struct axis){.value = 0, .rem = 0, .unit = Displacement, .time = now};
   // TODO: fill as `input_processor_kinetic_xy_data` grows
 
   k_work_init_delayable(&data->tick_work, kinetic_xy_handle_work);
@@ -176,6 +188,7 @@ marker_relative_input:
     data->x.time = now;
     if (data->x.unit == Displacement) {
       data->x.value = 0;
+      data->x.rem = 0;
       data->x.unit = Velocity;
     } else {
       int64_t delta_us = delta_ticks_to_us(delta_ticks);
@@ -192,6 +205,7 @@ marker_relative_input:
     data->y.time = now;
     if (data->y.unit == Displacement) {
       data->y.value = 0;
+      data->y.rem = 0;
       data->y.unit = Velocity;
     } else {
       int64_t delta_us = delta_ticks_to_us(delta_ticks);

@@ -11,7 +11,7 @@
 
 LOG_MODULE_REGISTER(input_processor_kinetic_xy, CONFIG_ZMK_LOG_LEVEL);
 
-int32_t i32_sat_mul(int32_t a, int32_t b) {
+static inline int32_t i32_sat_mul(int32_t a, int32_t b) {
   int32_t result;
   if (__builtin_mul_overflow(a, b, &result)) {
     return (a < 0) == (b < 0) ? INT32_MAX : INT32_MIN;
@@ -60,7 +60,8 @@ struct input_processor_kinetic_xy_data {
   int64_t event_time;
 };
 
-static bool KINETIC_XY_TOGGLE_SLOTS[CONFIG_ZMK_KINETIC_XY_TOGGLE_STATES];
+static bool KINETIC_XY_TOGGLE_SLOTS[CONFIG_ZMK_KINETIC_XY_TOGGLE_STATES] = {
+    [0 ... CONFIG_ZMK_KINETIC_XY_TOGGLE_STATES - 1] = true};
 
 void input_processor_kinetic_xy_toggle(uint8_t slot) {
   KINETIC_XY_TOGGLE_SLOTS[slot] = !KINETIC_XY_TOGGLE_SLOTS[slot];

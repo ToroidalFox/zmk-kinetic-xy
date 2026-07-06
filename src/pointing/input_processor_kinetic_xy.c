@@ -8,7 +8,6 @@
 #include <zephyr/sys/time_units.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/sys_clock.h>
-#include <zephyr/toolchain.h>
 
 LOG_MODULE_REGISTER(input_processor_kinetic_xy, CONFIG_ZMK_LOG_LEVEL);
 
@@ -18,6 +17,16 @@ int32_t i32_sat_mul(int32_t a, int32_t b) {
     return (a < 0) == (b < 0) ? INT32_MAX : INT32_MIN;
   }
   return result;
+}
+typedef int32_t i22f10;
+#define I22F10_SHIFT 10
+#define I22F10_ONE (1 << 10)
+#define I22F10_HALF (1 << 9)
+static inline i22f10 i22f10_from(int32_t val) { return val << I22F10_SHIFT; }
+static inline int32_t i32_from(i22f10 val) { return val / I22F10_ONE; }
+static inline i22f10 vel_from_dpdt(int32_t dp, int32_t dt_us) {
+  return CLAMP(((int64_t)dp << I22F10_SHIFT) * USEC_PER_SEC / (int64_t)dt_us,
+               INT32_MIN, INT32_MAX);
 }
 
 struct input_processor_kinetic_xy_config {
@@ -36,8 +45,8 @@ enum Unit {
 };
 
 struct axis {
-  int32_t value;
-  int32_t rem;
+  i22f10 value;
+  i22f10 rem;
   enum Unit unit; // unit when next event comes in rather than right now
   int64_t time;
 };
@@ -59,17 +68,6 @@ void input_processor_kinetic_xy_toggle(uint8_t slot) {
 
 static inline int32_t delta_ticks_to_us(int64_t t) {
   return CLAMP(k_ticks_to_us_near64(t), 0, USEC_PER_SEC);
-}
-
-typedef int32_t i22f10;
-#define I22F10_SHIFT 10
-#define I22F10_ONE (1 << 10)
-#define I22F10_HALF (1 << 9)
-static inline i22f10 i22f10_from(int32_t val) { return val << I22F10_SHIFT; }
-static inline int32_t i32_from(i22f10 val) { return val / I22F10_ONE; }
-static inline i22f10 vel_from_dpdt(int32_t dp, int32_t dt_us) {
-  return CLAMP(((int64_t)dp << I22F10_SHIFT) * USEC_PER_SEC / (int64_t)dt_us,
-               INT32_MIN, INT32_MAX);
 }
 
 static bool is_above_trigger_threshold(
@@ -102,12 +100,14 @@ static void kinetic_xy_handle_work(struct k_work *work) {
     return;
   }
 
-  data->x.value = data->x.value * (1000 - config->decay_rate) / 1000;
-  data->y.value = data->y.value * (1000 - config->decay_rate) / 1000;
+  data->x.value = i32_sat_mul(data->x.value, 1000 - config->decay_rate) / 1000;
+  data->y.value = i32_sat_mul(data->y.value, 1000 - config->decay_rate) / 1000;
 
   if (is_above_clamp_threshold(config, data)) {
-    i22f10 dx = data->x.value * config->event_interval / 1000 + data->x.rem;
-    i22f10 dy = data->y.value * config->event_interval / 1000 + data->y.rem;
+    i22f10 dx =
+        i32_sat_mul(data->x.value, config->event_interval) / 1000 + data->x.rem;
+    i22f10 dy =
+        i32_sat_mul(data->y.value, config->event_interval) / 1000 + data->y.rem;
     int32_t dx_int = i32_from(dx);
     int32_t dy_int = i32_from(dy);
     data->x.rem = (dx - (i22f10_from(dx_int)));

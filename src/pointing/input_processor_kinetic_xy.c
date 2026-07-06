@@ -12,10 +12,10 @@
 
 LOG_MODULE_REGISTER(input_processor_kinetic_xy, CONFIG_ZMK_LOG_LEVEL);
 
-int64_t i64_sat_mul(int64_t a, int64_t b) {
-  int64_t result;
+int32_t i32_sat_mul(int32_t a, int32_t b) {
+  int32_t result;
   if (__builtin_mul_overflow(a, b, &result)) {
-    return (a < 0) == (b < 0) ? INT64_MAX : INT64_MIN;
+    return (a < 0) == (b < 0) ? INT32_MAX : INT32_MIN;
   }
   return result;
 }
@@ -51,10 +51,10 @@ struct input_processor_kinetic_xy_data {
   int64_t event_time;
 };
 
-static bool kinetic_xy_toggle_slots[CONFIG_ZMK_KINETIC_XY_TOGGLE_STATES];
+static bool KINETIC_XY_TOGGLE_SLOTS[CONFIG_ZMK_KINETIC_XY_TOGGLE_STATES];
 
 static void input_processor_kinetic_xy_toggle(uint8_t slot) {
-  kinetic_xy_toggle_slots[slot] = !kinetic_xy_toggle_slots[slot];
+  KINETIC_XY_TOGGLE_SLOTS[slot] = !KINETIC_XY_TOGGLE_SLOTS[slot];
 }
 
 static inline int32_t delta_ticks_to_us(int64_t t) {
@@ -65,21 +65,6 @@ typedef int32_t i22f10;
 #define I22F10_SHIFT 10
 #define I22F10_ONE (1 << 10)
 #define I22F10_HALF (1 << 9)
-/// Fixed point multiplication with round away from zero.
-static inline i22f10 i22f10_mul(i22f10 a, i22f10 b) {
-  int64_t c = ((int64_t)a * (int64_t)b + I22F10_HALF) >> I22F10_SHIFT;
-  c += c < 0 ? -I22F10_HALF : I22F10_HALF;
-  c >>= I22F10_SHIFT;
-  return CLAMP(c, INT32_MIN, INT32_MAX);
-}
-/// Fixed point division with round away from zero.
-static inline i22f10 i22f10_div(i22f10 a, i22f10 b) {
-  int64_t dividend = (int64_t)a << I22F10_SHIFT;
-  int64_t half = (int64_t)b / 2;
-  dividend += (dividend < 0) == (half < 0) ? half : -half;
-  int64_t div_result = dividend / b;
-  return CLAMP(div_result, INT32_MIN, INT32_MAX);
-}
 static inline i22f10 i22f10_from(int32_t val) { return val << I22F10_SHIFT; }
 static inline int32_t i32_from(i22f10 val) { return val / I22F10_ONE; }
 static inline i22f10 vel_from_dpdt(int32_t dp, int32_t dt_us) {
@@ -111,9 +96,8 @@ static void kinetic_xy_handle_work(struct k_work *work) {
   const struct device *device = data->device;
   const struct input_processor_kinetic_xy_config *config = device->config;
 
-  int32_t decay_rate = CLAMP(config->decay_rate, 0, 1000);
-  data->x.value = data->x.value * (1000 - decay_rate) / 1000;
-  data->y.value = data->y.value * (1000 - decay_rate) / 1000;
+  data->x.value = data->x.value * (1000 - config->decay_rate) / 1000;
+  data->y.value = data->y.value * (1000 - config->decay_rate) / 1000;
 
   if (is_above_clamp_threshold(config, data)) {
     i22f10 dx = data->x.value * config->event_interval / 1000 + data->x.rem;

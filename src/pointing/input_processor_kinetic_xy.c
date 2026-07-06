@@ -53,7 +53,7 @@ struct input_processor_kinetic_xy_data {
 
 static bool KINETIC_XY_TOGGLE_SLOTS[CONFIG_ZMK_KINETIC_XY_TOGGLE_STATES];
 
-static void input_processor_kinetic_xy_toggle(uint8_t slot) {
+void input_processor_kinetic_xy_toggle(uint8_t slot) {
   KINETIC_XY_TOGGLE_SLOTS[slot] = !KINETIC_XY_TOGGLE_SLOTS[slot];
 }
 
@@ -96,6 +96,12 @@ static void kinetic_xy_handle_work(struct k_work *work) {
   const struct device *device = data->device;
   const struct input_processor_kinetic_xy_config *config = device->config;
 
+  if (!KINETIC_XY_TOGGLE_SLOTS[config->slot]) {
+    data->x = (struct axis){.value = 0, .rem = 0};
+    data->y = (struct axis){.value = 0, .rem = 0};
+    return;
+  }
+
   data->x.value = data->x.value * (1000 - config->decay_rate) / 1000;
   data->y.value = data->y.value * (1000 - config->decay_rate) / 1000;
 
@@ -128,7 +134,6 @@ static int kinetic_xy_init(const struct device *device) {
       (struct axis){.value = 0, .rem = 0, .unit = Displacement, .time = now};
   data->y =
       (struct axis){.value = 0, .rem = 0, .unit = Displacement, .time = now};
-  // TODO: fill as `input_processor_kinetic_xy_data` grows
 
   k_work_init_delayable(&data->tick_work, kinetic_xy_handle_work);
   return 0;
@@ -158,7 +163,8 @@ static int kinetic_xy_handle_event(const struct device *device,
       if ((data->x.unit == Velocity || data->y.unit == Velocity) &&
           is_above_trigger_threshold(config, data)) {
         data->event_time = now;
-        k_work_reschedule(&data->tick_work, K_MSEC(config->event_interval));
+        if (KINETIC_XY_TOGGLE_SLOTS[config->slot])
+          k_work_reschedule(&data->tick_work, K_MSEC(config->event_interval));
       }
       data->x.unit = data->y.unit = Displacement;
     }

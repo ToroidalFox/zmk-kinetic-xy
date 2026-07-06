@@ -5,7 +5,7 @@ compatible: "zmk,input-processor-kinetic-xy"
 include: ip_zero_param.yaml
 
 properties:
-  slot:
+  toggle-slot:
     type: int
     required: true
     description: |
@@ -30,6 +30,7 @@ properties:
     default: 1
     description: |
       Velocity threshold below which kinetic movement stops.
+
   trigger-threshold:
     type: int
     required: true

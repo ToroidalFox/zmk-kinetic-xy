@@ -30,7 +30,7 @@ static inline i22f10 vel_from_dpdt(int32_t dp, int32_t dt_us) {
 }
 
 struct input_processor_kinetic_xy_config {
-  uint8_t slot;
+  uint8_t toggle_slot;
   uint32_t event_interval;
 
   int32_t decay_rate;
@@ -94,7 +94,7 @@ static void kinetic_xy_handle_work(struct k_work *work) {
   const struct device *device = data->device;
   const struct input_processor_kinetic_xy_config *config = device->config;
 
-  if (!KINETIC_XY_TOGGLE_SLOTS[config->slot]) {
+  if (!KINETIC_XY_TOGGLE_SLOTS[config->toggle_slot]) {
     data->x = (struct axis){.value = 0, .rem = 0};
     data->y = (struct axis){.value = 0, .rem = 0};
     return;
@@ -124,7 +124,7 @@ static void kinetic_xy_handle_work(struct k_work *work) {
   }
 }
 
-static int kinetic_xy_init(const struct device *device) {
+static int input_processor_kinetic_xy_init(const struct device *device) {
   struct input_processor_kinetic_xy_data *data = device->data;
 
   int64_t now = k_uptime_ticks();
@@ -163,7 +163,7 @@ static int kinetic_xy_handle_event(const struct device *device,
       if ((data->x.unit == Velocity || data->y.unit == Velocity) &&
           is_above_trigger_threshold(config, data)) {
         data->event_time = now;
-        if (KINETIC_XY_TOGGLE_SLOTS[config->slot])
+        if (KINETIC_XY_TOGGLE_SLOTS[config->toggle_slot])
           k_work_reschedule(&data->tick_work, K_MSEC(config->event_interval));
       }
       data->x.unit = data->y.unit = Displacement;
@@ -211,6 +211,24 @@ marker_relative_input:
   return ZMK_INPUT_PROC_CONTINUE;
 }
 
-static const struct zmk_input_processor_driver_api kinetic_xy_driver_api = {
-    .handle_event = kinetic_xy_handle_event,
+static const struct zmk_input_processor_driver_api
+    input_processor_kinetic_xy_driver_api = {
+        .handle_event = kinetic_xy_handle_event,
 };
+
+#define KINETIC_XY_INST(n)                                                     \
+  static struct input_processor_kinetic_xy_data_##n = {};                      \
+  static struct input_processor_kinetic_xy_config_##n = {                      \
+      .toggle_slot = DT_INST_PROP(n, toggle_slot),                             \
+      .event_interval = DT_INST_PROP(n, event_interval),                       \
+      .decay_rate = DT_INST_PROP(n, decay_rate),                               \
+      .clamp_threshold = DT_INST_PROP(n, clamp_threshold),                     \
+      .trigger_threshold = DT_INST_PROP(n, trigger_threshold),                 \
+  };                                                                           \
+  DEVICE_DT_INST_DEFINE(n, input_processor_kinetic_xy_init, NULL,              \
+                        &input_processor_kinetic_xy_data_##n,                  \
+                        &input_processor_kinetic_xy_config_##n, POST_KERNEL,   \
+                        CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,                   \
+                        &input_processor_kinetic_xy_driver_api);
+
+DT_INST_FOREACH_STATUS_OKAY(KINETIC_XY_INST)

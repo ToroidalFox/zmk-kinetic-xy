@@ -2,7 +2,7 @@
 
 #include <zephyr/device.h>
 #include <zmk/behavior.h>
-#include <zmk/input/kinetic_xy.h>
+#include <zmk_kinetic_xy/kinetic_xy.h>
 
 struct behavior_kinetic_xy_toggle_config {
   uint8_t slot;

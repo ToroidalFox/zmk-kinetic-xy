@@ -218,13 +218,15 @@ static const struct zmk_input_processor_driver_api
 };
 
 #define KINETIC_XY_INST(n)                                                     \
-  static struct input_processor_kinetic_xy_data_##n = {};                      \
-  static struct input_processor_kinetic_xy_config_##n = {                      \
-      .toggle_slot = DT_INST_PROP(n, toggle_slot),                             \
-      .event_interval = DT_INST_PROP(n, event_interval),                       \
-      .decay_rate = DT_INST_PROP(n, decay_rate),                               \
-      .clamp_threshold = DT_INST_PROP(n, clamp_threshold),                     \
-      .trigger_threshold = DT_INST_PROP(n, trigger_threshold),                 \
+  static struct input_processor_kinetic_xy_data                                \
+      input_processor_kinetic_xy_data_##n = {};                                \
+  static const struct input_processor_kinetic_xy_config                        \
+      input_processor_kinetic_xy_config_##n = {                                \
+          .toggle_slot = DT_INST_PROP(n, toggle_slot),                         \
+          .event_interval = DT_INST_PROP(n, event_interval),                   \
+          .decay_rate = DT_INST_PROP(n, decay_rate),                           \
+          .clamp_threshold = DT_INST_PROP(n, clamp_threshold),                 \
+          .trigger_threshold = DT_INST_PROP(n, trigger_threshold),             \
   };                                                                           \
   DEVICE_DT_INST_DEFINE(n, input_processor_kinetic_xy_init, NULL,              \
                         &input_processor_kinetic_xy_data_##n,                  \

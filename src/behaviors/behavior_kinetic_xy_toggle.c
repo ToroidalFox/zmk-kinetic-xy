@@ -30,8 +30,9 @@ static const struct behavior_driver_api behavior_kinetic_xy_toggle_driver_api =
 };
 
 #define KINETIC_XY_TOGGLE_INST(n)                                              \
-  static struct behavior_kinetic_xy_toggle_config_##n = {                      \
-      .slot = DT_INST_PROP(n, slot),                                           \
+  static const struct behavior_kinetic_xy_toggle_config                        \
+      behavior_kinetic_xy_toggle_config_##n = {                                \
+          .slot = DT_INST_PROP(n, slot),                                       \
   };                                                                           \
   DEVICE_DT_INST_DEFINE(n, NULL, NULL, NULL,                                   \
                         &behavior_kinetic_xy_toggle_config_##n, POST_KERNEL,   \

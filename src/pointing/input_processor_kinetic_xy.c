@@ -62,6 +62,10 @@ struct input_processor_kinetic_xy_data {
 
 static bool KINETIC_XY_TOGGLE_SLOTS[CONFIG_ZMK_KINETIC_XY_TOGGLE_STATES] = {
     [0 ... CONFIG_ZMK_KINETIC_XY_TOGGLE_STATES - 1] = true};
+static inline bool
+is_enabled(const struct input_processor_kinetic_xy_config *config) {
+  return KINETIC_XY_TOGGLE_SLOTS[config->toggle_slot];
+}
 
 void input_processor_kinetic_xy_toggle(uint8_t slot) {
   KINETIC_XY_TOGGLE_SLOTS[slot] = !KINETIC_XY_TOGGLE_SLOTS[slot];
@@ -95,7 +99,7 @@ static void kinetic_xy_handle_work(struct k_work *work) {
   const struct device *device = data->device;
   const struct input_processor_kinetic_xy_config *config = device->config;
 
-  if (!KINETIC_XY_TOGGLE_SLOTS[config->toggle_slot]) {
+  if (!is_enabled(config)) {
     data->x = (struct axis){.value = 0, .rem = 0};
     data->y = (struct axis){.value = 0, .rem = 0};
     return;
@@ -120,6 +124,7 @@ static void kinetic_xy_handle_work(struct k_work *work) {
 
     k_work_schedule(&data->tick_work, K_MSEC(config->event_interval));
   } else {
+    LOG_DBG("kinetic movement is slower than clamp threshold");
     data->x = (struct axis){.value = 0, .rem = 0};
     data->y = (struct axis){.value = 0, .rem = 0};
   }
@@ -127,6 +132,9 @@ static void kinetic_xy_handle_work(struct k_work *work) {
 
 static int input_processor_kinetic_xy_init(const struct device *device) {
   struct input_processor_kinetic_xy_data *data = device->data;
+  const struct input_processor_kinetic_xy_config *config = device->config;
+  LOG_DBG("initializing kinetic-xy, enabled: %s",
+          is_enabled(config) ? "true" : "false");
 
   int64_t now = k_uptime_ticks();
 
@@ -163,9 +171,12 @@ static int kinetic_xy_handle_event(const struct device *device,
     if (event_code == INPUT_BTN_TOUCH && event_value == 0) {
       if ((data->x.unit == Velocity || data->y.unit == Velocity) &&
           is_above_trigger_threshold(config, data)) {
+        LOG_DBG("finger lifted, starting kinetic movement");
         data->event_time = now;
-        if (KINETIC_XY_TOGGLE_SLOTS[config->toggle_slot])
+        if (is_enabled(config))
           k_work_reschedule(&data->tick_work, K_MSEC(config->event_interval));
+      } else {
+        LOG_DBG("finger lifted, but it was not fast enough");
       }
       data->x.unit = data->y.unit = Displacement;
     }

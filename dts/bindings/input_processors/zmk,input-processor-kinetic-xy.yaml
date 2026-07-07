@@ -12,7 +12,7 @@ properties:
       Slot index for this kinetic XY instance. Used to identify
       the instance for toggling.
 
-  touch-button-code:
+  touch-event-code:
     type: int
     required: true
     description: |

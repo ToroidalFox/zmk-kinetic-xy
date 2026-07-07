@@ -1,7 +1,7 @@
 #define DT_DRV_COMPAT zmk_behavior_kinetic_xy_toggle
 
+#include <drivers/behavior.h>
 #include <zephyr/device.h>
-#include <zmk/behavior.h>
 #include <zmk_kinetic_xy/kinetic_xy.h>
 
 struct behavior_kinetic_xy_toggle_config {

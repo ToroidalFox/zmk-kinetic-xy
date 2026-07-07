@@ -12,6 +12,15 @@ properties:
       Slot index for this kinetic XY instance. Used to identify
       the instance for toggling.
 
+  touch-button-code:
+    type: int
+    required: true
+    description: |
+      Input key code used to detect touch release events,
+      typically INPUT_BTN_TOUCH or INPUT_BTN_0.
+      On release of this button, if velocity exceeds the threshold,
+      kinetic movement begins.
+
   event-interval:
     type: int
     required: true
@@ -23,6 +32,7 @@ properties:
     required: true
     description: |
       Decay rate value used by decay function per `event-interval` in per mille.
+      Should be 0(no friction) to 1000(infinity friction).
 
   clamp-threshold:
     type: int

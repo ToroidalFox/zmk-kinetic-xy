@@ -31,8 +31,9 @@ static inline i22f10 vel_from_dpdt(int32_t dp, int32_t dt_us) {
 
 struct input_processor_kinetic_xy_config {
   uint8_t toggle_slot;
-  uint32_t event_interval;
+  uint16_t touch_event_code;
 
+  uint32_t event_interval;
   int32_t decay_rate;
 
   int32_t clamp_threshold;
@@ -168,7 +169,7 @@ static int kinetic_xy_handle_event(const struct device *device,
   if (event_type == INPUT_EV_REL) {
     goto marker_relative_input;
   } else if (event_type == INPUT_EV_KEY) {
-    if (event_code == INPUT_BTN_TOUCH && event_value == 0) {
+    if (event_code == config->touch_event_code && event_value == 0) {
       if ((data->x.unit == Velocity || data->y.unit == Velocity) &&
           is_above_trigger_threshold(config, data)) {
         LOG_DBG("finger lifted, starting kinetic movement");
@@ -234,6 +235,7 @@ static const struct zmk_input_processor_driver_api
   static const struct input_processor_kinetic_xy_config                        \
       input_processor_kinetic_xy_config_##n = {                                \
           .toggle_slot = DT_INST_PROP(n, toggle_slot),                         \
+          .touch_event_code = DT_INST_PROP(n, touch_event_code),               \
           .event_interval = DT_INST_PROP(n, event_interval),                   \
           .decay_rate = DT_INST_PROP(n, decay_rate),                           \
           .clamp_threshold = DT_INST_PROP(n, clamp_threshold),                 \

@@ -166,25 +166,10 @@ static int kinetic_xy_handle_event(const struct device *device,
   const int32_t event_value = event->value;
   int64_t now = k_uptime_ticks();
 
-  if (event_type == INPUT_EV_REL) {
-    goto marker_relative_input;
-  } else if (event_type == INPUT_EV_KEY) {
-    if (event_code == config->touch_event_code && event_value == 0) {
-      if ((data->x.unit == Velocity || data->y.unit == Velocity) &&
-          is_above_trigger_threshold(config, data)) {
-        LOG_DBG("finger lifted, starting kinetic movement");
-        data->event_time = now;
-        if (is_enabled(config))
-          k_work_reschedule(&data->tick_work, K_MSEC(config->event_interval));
-      } else {
-        LOG_DBG("finger lifted, but it was not fast enough");
-      }
-      data->x.unit = data->y.unit = Displacement;
-    }
+  if (event_type != INPUT_EV_REL) {
+    return ZMK_INPUT_PROC_CONTINUE;
   }
-  return ZMK_INPUT_PROC_CONTINUE;
 
-marker_relative_input:
   k_work_cancel_delayable(&data->tick_work);
   if (event_code == INPUT_REL_X) {
     int64_t delta_ticks = now - data->x.time;
@@ -193,6 +178,7 @@ marker_relative_input:
       data->x.value = 0;
       data->x.rem = 0;
       data->x.unit = Velocity;
+      LOG_DBG("initial x event");
     } else {
       int64_t delta_us = delta_ticks_to_us(delta_ticks);
 
@@ -200,7 +186,9 @@ marker_relative_input:
         LOG_DBG("delta_us is 0");
         return ZMK_INPUT_PROC_CONTINUE;
       }
-      data->x.value = vel_from_dpdt(event_value, delta_us);
+      i22f10 vel = vel_from_dpdt(event_value, delta_us);
+      LOG_DBG("current x vel: %d", i32_from(vel));
+      data->x.value = vel;
     }
   }
   if (event_code == INPUT_REL_Y) {
@@ -210,6 +198,7 @@ marker_relative_input:
       data->y.value = 0;
       data->y.rem = 0;
       data->y.unit = Velocity;
+      LOG_DBG("initial y event");
     } else {
       int64_t delta_us = delta_ticks_to_us(delta_ticks);
 
@@ -217,8 +206,22 @@ marker_relative_input:
         LOG_DBG("delta_us is 0");
         return ZMK_INPUT_PROC_CONTINUE;
       }
-      data->y.value = vel_from_dpdt(event_value, delta_us);
+      i22f10 vel = vel_from_dpdt(event_value, delta_us);
+      LOG_DBG("current y vel: %d", i32_from(vel));
+      data->y.value = vel;
     }
+  }
+  if (event_code == INPUT_REL_Z && event_value < 0) {
+    if ((data->x.unit == Velocity || data->y.unit == Velocity) &&
+        is_above_trigger_threshold(config, data)) {
+      LOG_DBG("finger lifted, starting kinetic movement");
+      data->event_time = now;
+      if (is_enabled(config))
+        k_work_reschedule(&data->tick_work, K_MSEC(config->event_interval));
+    } else {
+      LOG_DBG("finger lifted, but it was not fast enough");
+    }
+    data->x.unit = data->y.unit = Displacement;
   }
 
   return ZMK_INPUT_PROC_CONTINUE;

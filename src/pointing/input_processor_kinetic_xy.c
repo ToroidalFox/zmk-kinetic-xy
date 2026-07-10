@@ -205,8 +205,6 @@ static int kinetic_xy_handle_event(const struct device *device,
 
     if (delta_us != 0) {
       fp vel = vel_from_dpdt(event_value, delta_us);
-      LOG_DBG("X: raw %d, ticks %d, ms %d, vel %d", event_value,
-              (int32_t)delta_ticks, (int32_t)(delta_us / 1000), i32_from(vel));
       data->x.value = vel;
     }
     break;
@@ -218,13 +216,13 @@ static int kinetic_xy_handle_event(const struct device *device,
 
     if (delta_us != 0) {
       fp vel = vel_from_dpdt(event_value, delta_us);
-      LOG_DBG("Y: raw %d, ticks %d, ms %d, vel %d", event_value,
-              (int32_t)delta_ticks, (int32_t)(delta_us / 1000), i32_from(vel));
       data->y.value = vel;
     }
     break;
   }
   if (event->sync) {
+    LOG_DBG("X vel: %d, Y vel: %d", i32_from(data->x.value),
+            i32_from(data->y.value));
     if (config->invert_x) {
       data->x.raw_delta *= -1;
     }

@@ -1,13 +1,19 @@
-config ZMK_KINETIC_XY_TOGGLE
+config ZMK_INPUT_PROCESSOR_KINETIC_XY
+	bool "Kinetic XY"
+	default y
+	depends on ZMK_POINTING
+
+config ZMK_INPUT_PROCESSOR_KINETIC_XY_TOGGLE
 	bool "Kinetic XY Toggle"
 	default y
+	depends on ZMK_INPUT_PROCESSOR_KINETIC_XY
 	help
 	  Enable the ability to toggle kinetic XY processing on a
 	  per-slot basis.
 
-config ZMK_KINETIC_XY_TOGGLE_STATES
+config ZMK_INPUT_PROCESSOR_KINETIC_XY_TOGGLE_STATES
 	int "Kinetic XY Toggle States"
 	default 4
-	depends on ZMK_KINETIC_XY_TOGGLE
+	depends on ZMK_INPUT_PROCESSOR_KINETIC_XY_TOGGLE
 	help
 	  Number of slots to set toggle states.

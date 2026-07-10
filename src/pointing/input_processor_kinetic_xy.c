@@ -72,8 +72,9 @@ struct input_processor_kinetic_xy_data {
   struct axis y;
 };
 
-static bool KINETIC_XY_TOGGLE_SLOTS[CONFIG_ZMK_KINETIC_XY_TOGGLE_STATES] = {
-    [0 ... CONFIG_ZMK_KINETIC_XY_TOGGLE_STATES - 1] = true};
+static bool KINETIC_XY_TOGGLE_SLOTS
+    [CONFIG_ZMK_INPUT_PROCESSOR_KINETIC_XY_TOGGLE_STATES] = {
+        [0 ... CONFIG_ZMK_INPUT_PROCESSOR_KINETIC_XY_TOGGLE_STATES - 1] = true};
 static inline bool
 is_enabled(const struct input_processor_kinetic_xy_config *config) {
   return KINETIC_XY_TOGGLE_SLOTS[config->toggle_slot];
@@ -138,7 +139,7 @@ static void kinetic_xy_handle_work(struct k_work *work) {
     case Cursor:
       zmk_hid_mouse_movement_set(dx_int, dy_int);
       zmk_endpoints_send_mouse_report();
-      zmk_hid_mouse_scroll_set(0, 0);
+      zmk_hid_mouse_movement_set(0, 0);
       break;
     case Scroll:
       zmk_hid_mouse_scroll_set(dx_int, dy_int);

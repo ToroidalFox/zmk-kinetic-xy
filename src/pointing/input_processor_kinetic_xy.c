@@ -50,6 +50,9 @@ struct input_processor_kinetic_xy_data {
   struct k_work_delayable tick_work;
   const struct device *device;
 
+  const struct device *input_device;
+  bool synthetic;
+
   struct axis x;
   struct axis y;
 };
@@ -90,6 +93,12 @@ static void kinetic_xy_handle_work(struct k_work *work) {
     data->y = (struct axis){.value = 0, .rem = 0, .time = now};
     return;
   }
+  if (data->input_device == NULL) {
+    data->x = (struct axis){.value = 0, .rem = 0, .time = now};
+    data->y = (struct axis){.value = 0, .rem = 0, .time = now};
+    LOG_DBG("input_device is somehow NULL");
+    return;
+  }
 
   data->x.value = i32_sat_mul(data->x.value, 1000 - config->decay_rate) / 1000;
   data->y.value = i32_sat_mul(data->y.value, 1000 - config->decay_rate) / 1000;
@@ -105,10 +114,14 @@ static void kinetic_xy_handle_work(struct k_work *work) {
     int32_t dy_int = i32_from(dy);
     data->x.rem = (dx - (fp_from(dx_int)));
     data->y.rem = (dy - (fp_from(dy_int)));
+    data->synthetic = true;
     if (dx_int != 0)
-      input_report_rel(device, INPUT_REL_X, dx_int, dy_int == 0, K_NO_WAIT);
+      input_report_rel(data->input_device, INPUT_REL_X, dx_int, dy_int == 0,
+                       K_NO_WAIT);
     if (dy_int != 0)
-      input_report_rel(device, INPUT_REL_Y, dy_int, true, K_NO_WAIT);
+      input_report_rel(data->input_device, INPUT_REL_Y, dy_int, true,
+                       K_NO_WAIT);
+    data->synthetic = false;
 
     k_work_reschedule(&data->tick_work, K_MSEC(config->event_interval));
   } else {
@@ -127,6 +140,10 @@ static int input_processor_kinetic_xy_init(const struct device *device) {
   int64_t now = k_uptime_ticks();
 
   data->device = device;
+
+  data->input_device = NULL;
+  data->synthetic = false;
+
   data->x = (struct axis){.value = 0, .rem = 0, .time = now};
   data->y = (struct axis){.value = 0, .rem = 0, .time = now};
 
@@ -145,11 +162,17 @@ static int kinetic_xy_handle_event(const struct device *device,
   // just ergonomics
   struct input_processor_kinetic_xy_data *data =
       (struct input_processor_kinetic_xy_data *)device->data;
+  if (data->synthetic)
+    return ZMK_INPUT_PROC_CONTINUE;
   const struct input_processor_kinetic_xy_config *config = device->config;
   const uint8_t event_type = event->type;
   const uint16_t event_code = event->code;
   const int32_t event_value = event->value;
   int64_t now = k_uptime_ticks();
+
+  if (data->input_device == NULL) {
+    data->input_device = event->dev;
+  }
 
   if (event_type != INPUT_EV_REL) {
     return ZMK_INPUT_PROC_CONTINUE;

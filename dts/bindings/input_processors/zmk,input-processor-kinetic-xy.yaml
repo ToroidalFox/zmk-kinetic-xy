@@ -12,6 +12,25 @@ properties:
       Slot index for this kinetic XY instance. Used to identify
       the instance for toggling.
 
+  map-as:
+    type: string
+    required: true
+    description:
+      Whether to map xy events as cursor movement or scroll input.
+    enum:
+      - "cursor"
+      - "scroll"
+
+  invert-x:
+    type: boolean
+    description: Invert X.
+  invert-y:
+    type: boolean
+    description: Invert Y.
+  swap-xy:
+    type: boolean
+    description: Swap X and Y.
+
   event-delay:
     type: int
     required: true

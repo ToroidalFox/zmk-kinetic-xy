@@ -85,7 +85,7 @@ void input_processor_kinetic_xy_toggle(uint8_t slot) {
 }
 
 static inline int64_t delta_ticks_to_us(int64_t t) {
-  return MAX(k_ticks_to_us_near64(t), 0);
+  return MAX(k_ticks_to_us_near64(t), 100);
 }
 
 static bool
@@ -105,15 +105,14 @@ static void kinetic_xy_handle_work(struct k_work *work) {
   int64_t now = k_uptime_ticks();
 
   if (!is_enabled(config)) {
-    data->x = (struct axis){.value = 0, .rem = 0, .time = now};
-    data->y = (struct axis){.value = 0, .rem = 0, .time = now};
+    data->x = (struct axis){.value = 0, .rem = 0};
+    data->y = (struct axis){.value = 0, .rem = 0};
     return;
   }
 
   data->x.value = i32_sat_mul(data->x.value, 1000 - config->decay_rate) / 1000;
   data->y.value = i32_sat_mul(data->y.value, 1000 - config->decay_rate) / 1000;
-  data->x.time = now;
-  data->y.time = now;
+  LOG_DBG("vel x: %d, y: %d", i32_from(data->x.value), i32_from(data->y.value));
 
   if (is_above_threshold(config->clamp_threshold, data)) {
     fp dx =
@@ -206,7 +205,8 @@ static int kinetic_xy_handle_event(const struct device *device,
 
     if (delta_us != 0) {
       fp vel = vel_from_dpdt(event_value, delta_us);
-      LOG_DBG("current x vel: %d", i32_from(vel));
+      LOG_DBG("X: raw %d, ticks %ld, us %ld, vel %d", event_value, delta_ticks,
+              delta_us, i32_from(vel));
       data->x.value = vel;
     }
     break;
@@ -218,7 +218,8 @@ static int kinetic_xy_handle_event(const struct device *device,
 
     if (delta_us != 0) {
       fp vel = vel_from_dpdt(event_value, delta_us);
-      LOG_DBG("current y vel: %d", i32_from(vel));
+      LOG_DBG("Y: raw %d, ticks %ld, us %ld, vel %d", event_value, delta_ticks,
+              delta_us, i32_from(vel));
       data->y.value = vel;
     }
     break;

@@ -2,6 +2,7 @@ config ZMK_INPUT_PROCESSOR_KINETIC_XY
 	bool "Kinetic XY"
 	default y
 	depends on ZMK_POINTING
+	depends on !ZMK_SPLIT || ZMK_SPLIT_ROLE_CENTRAL
 
 config ZMK_INPUT_PROCESSOR_KINETIC_XY_TOGGLE
 	bool "Kinetic XY Toggle"

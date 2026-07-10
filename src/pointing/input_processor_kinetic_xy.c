@@ -112,7 +112,6 @@ static void kinetic_xy_handle_work(struct k_work *work) {
 
   data->x.value = i32_sat_mul(data->x.value, 1000 - config->decay_rate) / 1000;
   data->y.value = i32_sat_mul(data->y.value, 1000 - config->decay_rate) / 1000;
-  LOG_DBG("vel x: %d, y: %d", i32_from(data->x.value), i32_from(data->y.value));
 
   if (is_above_threshold(config->clamp_threshold, data)) {
     fp dx =
@@ -123,6 +122,7 @@ static void kinetic_xy_handle_work(struct k_work *work) {
     int32_t dy_int = i32_from(dy);
     data->x.rem = (dx - (fp_from(dx_int)));
     data->y.rem = (dy - (fp_from(dy_int)));
+    LOG_DBG("vel x: %d, y: %d", dx_int, dy_int);
 
     if (config->invert_x) {
       dx_int *= -1;
@@ -205,8 +205,8 @@ static int kinetic_xy_handle_event(const struct device *device,
 
     if (delta_us != 0) {
       fp vel = vel_from_dpdt(event_value, delta_us);
-      LOG_DBG("X: raw %d, ticks %ld, us %ld, vel %d", event_value, delta_ticks,
-              delta_us, i32_from(vel));
+      LOG_DBG("X: raw %d, ticks %d, ms %d, vel %d", event_value,
+              (int32_t)delta_ticks, (int32_t)(delta_us / 1000), i32_from(vel));
       data->x.value = vel;
     }
     break;
@@ -218,8 +218,8 @@ static int kinetic_xy_handle_event(const struct device *device,
 
     if (delta_us != 0) {
       fp vel = vel_from_dpdt(event_value, delta_us);
-      LOG_DBG("Y: raw %d, ticks %ld, us %ld, vel %d", event_value, delta_ticks,
-              delta_us, i32_from(vel));
+      LOG_DBG("Y: raw %d, ticks %d, ms %d, vel %d", event_value,
+              (int32_t)delta_ticks, (int32_t)(delta_us / 1000), i32_from(vel));
       data->y.value = vel;
     }
     break;

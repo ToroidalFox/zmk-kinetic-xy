@@ -18,21 +18,21 @@ static inline int32_t i32_sat_mul(int32_t a, int32_t b) {
   }
   return result;
 }
-typedef int32_t i22f10;
-#define I22F10_SHIFT 10
-#define I22F10_ONE (1 << 10)
-#define I22F10_HALF (1 << 9)
-static inline i22f10 i22f10_from(int32_t val) { return val << I22F10_SHIFT; }
-static inline int32_t i32_from(i22f10 val) { return val / I22F10_ONE; }
-static inline i22f10 vel_from_dpdt(int32_t dp, int32_t dt_us) {
-  return CLAMP(((int64_t)dp << I22F10_SHIFT) * USEC_PER_SEC / (int64_t)dt_us,
-               INT32_MIN, INT32_MAX);
+typedef int32_t fp;
+#define FP_SHIFT 10
+#define FP_ONE (1 << FP_SHIFT)
+#define FP_HALF (1 << (FP_SHIFT - 1))
+static inline fp fp_from(int32_t val) { return val << FP_SHIFT; }
+static inline int32_t i32_from(fp val) { return val / FP_ONE; }
+static inline fp vel_from_dpdt(int32_t dp, int64_t dt_us) {
+  return CLAMP(((int64_t)dp << FP_SHIFT) * USEC_PER_SEC / dt_us, INT32_MIN,
+               INT32_MAX);
 }
 
 struct input_processor_kinetic_xy_config {
   uint8_t toggle_slot;
-  uint16_t touch_event_code;
 
+  uint32_t event_delay;
   uint32_t event_interval;
   int32_t decay_rate;
 
@@ -40,15 +40,9 @@ struct input_processor_kinetic_xy_config {
   int32_t trigger_threshold;
 };
 
-enum Unit {
-  Displacement,
-  Velocity,
-};
-
 struct axis {
-  i22f10 value;
-  i22f10 rem;
-  enum Unit unit; // unit when next event comes in rather than right now
+  fp value;
+  fp rem;
   int64_t time;
 };
 
@@ -58,7 +52,6 @@ struct input_processor_kinetic_xy_data {
 
   struct axis x;
   struct axis y;
-  int64_t event_time;
 };
 
 static bool KINETIC_XY_TOGGLE_SLOTS[CONFIG_ZMK_KINETIC_XY_TOGGLE_STATES] = {
@@ -72,22 +65,13 @@ void input_processor_kinetic_xy_toggle(uint8_t slot) {
   KINETIC_XY_TOGGLE_SLOTS[slot] = !KINETIC_XY_TOGGLE_SLOTS[slot];
 }
 
-static inline int32_t delta_ticks_to_us(int64_t t) {
-  return CLAMP(k_ticks_to_us_near64(t), 0, USEC_PER_SEC);
+static inline int64_t delta_ticks_to_us(int64_t t) {
+  return MAX(k_ticks_to_us_near64(t), 0);
 }
 
-static bool is_above_trigger_threshold(
-    const struct input_processor_kinetic_xy_config *config,
-    const struct input_processor_kinetic_xy_data *data) {
-  int32_t threshold = config->trigger_threshold;
-  int32_t x_vel = i32_from(data->x.value);
-  int32_t y_vel = i32_from(data->y.value);
-  return threshold * threshold <= x_vel * x_vel + y_vel * y_vel;
-}
 static bool
-is_above_clamp_threshold(const struct input_processor_kinetic_xy_config *config,
-                         const struct input_processor_kinetic_xy_data *data) {
-  int32_t threshold = config->clamp_threshold;
+is_above_threshold(const int32_t threshold,
+                   const struct input_processor_kinetic_xy_data *data) {
   int32_t x_vel = i32_from(data->x.value);
   int32_t y_vel = i32_from(data->y.value);
   return threshold * threshold <= x_vel * x_vel + y_vel * y_vel;
@@ -99,31 +83,34 @@ static void kinetic_xy_handle_work(struct k_work *work) {
       CONTAINER_OF(_work, struct input_processor_kinetic_xy_data, tick_work);
   const struct device *device = data->device;
   const struct input_processor_kinetic_xy_config *config = device->config;
+  int64_t now = k_uptime_ticks();
 
   if (!is_enabled(config)) {
-    data->x = (struct axis){.value = 0, .rem = 0};
-    data->y = (struct axis){.value = 0, .rem = 0};
+    data->x = (struct axis){.value = 0, .rem = 0, .time = now};
+    data->y = (struct axis){.value = 0, .rem = 0, .time = now};
     return;
   }
 
   data->x.value = i32_sat_mul(data->x.value, 1000 - config->decay_rate) / 1000;
   data->y.value = i32_sat_mul(data->y.value, 1000 - config->decay_rate) / 1000;
+  data->x.time = now;
+  data->y.time = now;
 
-  if (is_above_clamp_threshold(config, data)) {
-    i22f10 dx =
+  if (is_above_threshold(config->clamp_threshold, data)) {
+    fp dx =
         i32_sat_mul(data->x.value, config->event_interval) / 1000 + data->x.rem;
-    i22f10 dy =
+    fp dy =
         i32_sat_mul(data->y.value, config->event_interval) / 1000 + data->y.rem;
     int32_t dx_int = i32_from(dx);
     int32_t dy_int = i32_from(dy);
-    data->x.rem = (dx - (i22f10_from(dx_int)));
-    data->y.rem = (dy - (i22f10_from(dy_int)));
+    data->x.rem = (dx - (fp_from(dx_int)));
+    data->y.rem = (dy - (fp_from(dy_int)));
     if (dx_int != 0)
       input_report_rel(device, INPUT_REL_X, dx_int, dy_int == 0, K_NO_WAIT);
     if (dy_int != 0)
       input_report_rel(device, INPUT_REL_Y, dy_int, true, K_NO_WAIT);
 
-    k_work_schedule(&data->tick_work, K_MSEC(config->event_interval));
+    k_work_reschedule(&data->tick_work, K_MSEC(config->event_interval));
   } else {
     LOG_DBG("kinetic movement is slower than clamp threshold");
     data->x = (struct axis){.value = 0, .rem = 0};
@@ -140,10 +127,8 @@ static int input_processor_kinetic_xy_init(const struct device *device) {
   int64_t now = k_uptime_ticks();
 
   data->device = device;
-  data->x =
-      (struct axis){.value = 0, .rem = 0, .unit = Displacement, .time = now};
-  data->y =
-      (struct axis){.value = 0, .rem = 0, .unit = Displacement, .time = now};
+  data->x = (struct axis){.value = 0, .rem = 0, .time = now};
+  data->y = (struct axis){.value = 0, .rem = 0, .time = now};
 
   k_work_init_delayable(&data->tick_work, kinetic_xy_handle_work);
   return 0;
@@ -170,58 +155,36 @@ static int kinetic_xy_handle_event(const struct device *device,
     return ZMK_INPUT_PROC_CONTINUE;
   }
 
-  k_work_cancel_delayable(&data->tick_work);
   if (event_code == INPUT_REL_X) {
     int64_t delta_ticks = now - data->x.time;
     data->x.time = now;
-    if (data->x.unit == Displacement) {
-      data->x.value = 0;
-      data->x.rem = 0;
-      data->x.unit = Velocity;
-      LOG_DBG("initial x event");
-    } else {
-      int64_t delta_us = delta_ticks_to_us(delta_ticks);
+    int64_t delta_us = delta_ticks_to_us(delta_ticks);
 
-      if (delta_us == 0) {
-        LOG_DBG("delta_us is 0");
-        return ZMK_INPUT_PROC_CONTINUE;
-      }
-      i22f10 vel = vel_from_dpdt(event_value, delta_us);
-      LOG_DBG("current x vel: %d", i32_from(vel));
-      data->x.value = vel;
+    if (delta_us == 0) {
+      return ZMK_INPUT_PROC_CONTINUE;
     }
+    fp vel = vel_from_dpdt(event_value, delta_us);
+    LOG_DBG("current x vel: %d", i32_from(vel));
+    data->x.value = vel;
   }
   if (event_code == INPUT_REL_Y) {
     int64_t delta_ticks = now - data->y.time;
     data->y.time = now;
-    if (data->y.unit == Displacement) {
-      data->y.value = 0;
-      data->y.rem = 0;
-      data->y.unit = Velocity;
-      LOG_DBG("initial y event");
-    } else {
-      int64_t delta_us = delta_ticks_to_us(delta_ticks);
+    int64_t delta_us = delta_ticks_to_us(delta_ticks);
 
-      if (delta_us == 0) {
-        LOG_DBG("delta_us is 0");
-        return ZMK_INPUT_PROC_CONTINUE;
-      }
-      i22f10 vel = vel_from_dpdt(event_value, delta_us);
-      LOG_DBG("current y vel: %d", i32_from(vel));
-      data->y.value = vel;
+    if (delta_us == 0) {
+      return ZMK_INPUT_PROC_CONTINUE;
     }
+    fp vel = vel_from_dpdt(event_value, delta_us);
+    LOG_DBG("current y vel: %d", i32_from(vel));
+    data->y.value = vel;
   }
-  if (event_code == INPUT_REL_Z && event_value < 0) {
-    if ((data->x.unit == Velocity || data->y.unit == Velocity) &&
-        is_above_trigger_threshold(config, data)) {
-      LOG_DBG("finger lifted, starting kinetic movement");
-      data->event_time = now;
-      if (is_enabled(config))
-        k_work_reschedule(&data->tick_work, K_MSEC(config->event_interval));
+  if (event->sync) {
+    if (is_above_threshold(config->trigger_threshold, data)) {
+      k_work_reschedule(&data->tick_work, K_MSEC(config->event_delay));
     } else {
-      LOG_DBG("finger lifted, but it was not fast enough");
+      k_work_cancel_delayable(&data->tick_work);
     }
-    data->x.unit = data->y.unit = Displacement;
   }
 
   return ZMK_INPUT_PROC_CONTINUE;
@@ -238,7 +201,7 @@ static const struct zmk_input_processor_driver_api
   static const struct input_processor_kinetic_xy_config                        \
       input_processor_kinetic_xy_config_##n = {                                \
           .toggle_slot = DT_INST_PROP(n, toggle_slot),                         \
-          .touch_event_code = DT_INST_PROP(n, touch_event_code),               \
+          .event_delay = DT_INST_PROP(n, event_delay),                         \
           .event_interval = DT_INST_PROP(n, event_interval),                   \
           .decay_rate = DT_INST_PROP(n, decay_rate),                           \
           .clamp_threshold = DT_INST_PROP(n, clamp_threshold),                 \

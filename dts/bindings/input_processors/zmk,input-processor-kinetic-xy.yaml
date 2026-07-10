@@ -12,14 +12,14 @@ properties:
       Slot index for this kinetic XY instance. Used to identify
       the instance for toggling.
 
-  touch-event-code:
+  event-delay:
     type: int
     required: true
     description: |
-      Input key code used to detect touch release events,
-      typically INPUT_BTN_TOUCH or INPUT_BTN_0.
-      On release of this button, if velocity exceeds the threshold,
-      kinetic movement begins.
+      Initial delay in milliseconds after an input event before
+      kinetic movement begins. Prevents simulated events from
+      clashing with real input events. Should be higher than
+      report rate of the device.
 
   event-interval:
     type: int

@@ -135,17 +135,19 @@ static void kinetic_xy_handle_work(struct k_work *work) {
       swap(&dx_int, &dy_int);
     }
 
-    switch (config->map_as) {
-    case Cursor:
-      zmk_hid_mouse_movement_set(dx_int, dy_int);
-      zmk_endpoints_send_mouse_report();
-      zmk_hid_mouse_movement_set(0, 0);
-      break;
-    case Scroll:
-      zmk_hid_mouse_scroll_set(dx_int, dy_int);
-      zmk_endpoints_send_mouse_report();
-      zmk_hid_mouse_scroll_set(0, 0);
-      break;
+    if (dx_int != 0 || dy_int != 0) {
+      switch (config->map_as) {
+      case Cursor:
+        zmk_hid_mouse_movement_set(dx_int, dy_int);
+        zmk_endpoints_send_mouse_report();
+        zmk_hid_mouse_movement_set(0, 0);
+        break;
+      case Scroll:
+        zmk_hid_mouse_scroll_set(dx_int, dy_int);
+        zmk_endpoints_send_mouse_report();
+        zmk_hid_mouse_scroll_set(0, 0);
+        break;
+      }
     }
 
     k_work_reschedule(&data->tick_work, K_MSEC(config->event_interval));

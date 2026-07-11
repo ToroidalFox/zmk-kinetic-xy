@@ -84,8 +84,8 @@ void input_processor_kinetic_xy_toggle(uint8_t slot) {
   KINETIC_XY_TOGGLE_SLOTS[slot] = !KINETIC_XY_TOGGLE_SLOTS[slot];
 }
 
-static inline int64_t delta_ticks_to_us(int64_t t) {
-  return MAX(k_ticks_to_us_near64(t), 100);
+static inline int64_t delta_ticks_to_us(int64_t t, int64_t min_delta_us) {
+  return MAX(k_ticks_to_us_near64(t), min_delta_us);
 }
 
 static bool
@@ -201,7 +201,7 @@ static int kinetic_xy_handle_event(const struct device *device,
     data->x.raw_delta = event_value;
     delta_ticks = now - data->x.time;
     data->x.time = now;
-    delta_us = delta_ticks_to_us(delta_ticks);
+    delta_us = delta_ticks_to_us(delta_ticks, config->event_interval * 1000);
 
     if (delta_us != 0) {
       fp vel = vel_from_dpdt(event_value, delta_us);
@@ -212,7 +212,7 @@ static int kinetic_xy_handle_event(const struct device *device,
     data->y.raw_delta = event_value;
     delta_ticks = now - data->y.time;
     data->y.time = now;
-    delta_us = delta_ticks_to_us(delta_ticks);
+    delta_us = delta_ticks_to_us(delta_ticks, config->event_interval * 1000);
 
     if (delta_us != 0) {
       fp vel = vel_from_dpdt(event_value, delta_us);

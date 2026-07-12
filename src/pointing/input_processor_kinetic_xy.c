@@ -256,7 +256,8 @@ static int kinetic_xy_handle_event(const struct device *device,
     int32_t z_prev = data->z_val;
     data->z_val = event_value;
     bool finger_lifted = z_prev != 0 && data->z_val == 0;
-    if (finger_lifted && is_above_threshold(config->trigger_threshold, data)) {
+    if (is_enabled(config) && finger_lifted &&
+        is_above_threshold(config->trigger_threshold, data)) {
       k_work_reschedule(&data->tick_work, K_MSEC(config->event_interval));
     }
   }

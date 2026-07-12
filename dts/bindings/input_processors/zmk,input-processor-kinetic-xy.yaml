@@ -31,15 +31,6 @@ properties:
     type: boolean
     description: Swap X and Y.
 
-  event-delay:
-    type: int
-    required: true
-    description: |
-      Initial delay in milliseconds after an input event before
-      kinetic movement begins. Prevents simulated events from
-      clashing with real input events. Should be higher than
-      report rate of the device.
-
   event-interval:
     type: int
     required: true

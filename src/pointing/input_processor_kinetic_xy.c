@@ -1,4 +1,3 @@
-#include "zephyr/dt-bindings/input/input-event-codes.h"
 #define DT_DRV_COMPAT zmk_input_processor_kinetic_xy
 
 #include <drivers/input_processor.h>
@@ -162,8 +161,6 @@ static void kinetic_xy_handle_work(struct k_work *work) {
 static int input_processor_kinetic_xy_init(const struct device *device) {
   struct input_processor_kinetic_xy_data *data = device->data;
   const struct input_processor_kinetic_xy_config *config = device->config;
-  LOG_DBG("initializing kinetic-xy, enabled: %s",
-          is_enabled(config) ? "true" : "false");
 
   int64_t now = k_uptime_ticks();
 
@@ -190,9 +187,9 @@ static int kinetic_xy_handle_event(const struct device *device,
   const uint8_t event_type = event->type;
   const uint16_t event_code = event->code;
   const int32_t event_value = event->value;
-  int64_t now = k_uptime_ticks();
 
   if (event_type == INPUT_EV_REL) {
+    int64_t now = k_uptime_ticks();
     int64_t delta_ticks;
     int64_t delta_us;
     switch (event_code) {
@@ -223,8 +220,8 @@ static int kinetic_xy_handle_event(const struct device *device,
 
   if (event->sync) {
     k_work_cancel_delayable(&data->tick_work);
-    // LOG_DBG("X vel: %d, Y vel: %d", i32_from(data->x.value),
-    //         i32_from(data->y.value));
+    LOG_DBG("X vel: %d, Y vel: %d", i32_from(data->x.value),
+            i32_from(data->y.value));
     if (data->x.raw_delta != 0 || data->y.raw_delta != 0) {
       if (config->invert_x) {
         data->x.raw_delta *= -1;
@@ -258,6 +255,7 @@ static int kinetic_xy_handle_event(const struct device *device,
     bool finger_lifted = z_prev != 0 && data->z_val == 0;
     if (is_enabled(config) && finger_lifted &&
         is_above_threshold(config->trigger_threshold, data)) {
+      LOG_DBG("starting kinetic movement");
       k_work_reschedule(&data->tick_work, K_MSEC(config->event_interval));
     }
   }

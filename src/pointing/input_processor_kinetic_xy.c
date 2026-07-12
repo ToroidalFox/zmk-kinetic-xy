@@ -49,6 +49,7 @@ struct input_processor_kinetic_xy_config {
   bool invert_x;
   bool invert_y;
   bool swap_xy;
+  uint32_t event_delay;
   uint32_t event_interval;
   int32_t decay_rate;
 
@@ -69,7 +70,6 @@ struct input_processor_kinetic_xy_data {
 
   struct axis x;
   struct axis y;
-  int32_t z_val;
 };
 
 static bool KINETIC_XY_TOGGLE_SLOTS
@@ -167,7 +167,6 @@ static int input_processor_kinetic_xy_init(const struct device *device) {
   data->device = device;
   data->x = (struct axis){.value = 0, .rem = 0, .time = now};
   data->y = (struct axis){.value = 0, .rem = 0, .time = now};
-  data->z_val = 0;
 
   k_work_init_delayable(&data->tick_work, kinetic_xy_handle_work);
   return 0;
@@ -188,50 +187,50 @@ static int kinetic_xy_handle_event(const struct device *device,
   const uint16_t event_code = event->code;
   const int32_t event_value = event->value;
 
-  if (event_type == INPUT_EV_REL) {
-    int64_t now = k_uptime_ticks();
-    int64_t delta_ticks;
-    int64_t delta_us;
-    switch (event_code) {
-    case INPUT_REL_X:
-      data->x.raw_delta = event_value;
-      delta_ticks = now - data->x.time;
-      data->x.time = now;
-      delta_us = delta_ticks_to_us(delta_ticks, config->event_interval * 800);
-
-      if (delta_us != 0) {
-        fp vel = vel_from_dpdt(event_value, delta_us);
-        data->x.value = vel;
-      }
-      break;
-    case INPUT_REL_Y:
-      data->y.raw_delta = event_value;
-      delta_ticks = now - data->y.time;
-      data->y.time = now;
-      delta_us = delta_ticks_to_us(delta_ticks, config->event_interval * 800);
-
-      if (delta_us != 0) {
-        fp vel = vel_from_dpdt(event_value, delta_us);
-        data->y.value = vel;
-      }
-      break;
-    }
+  if (event_type != INPUT_EV_REL) {
+    return ZMK_INPUT_PROC_CONTINUE;
   }
 
+  int64_t now = k_uptime_ticks();
+  int64_t delta_ticks;
+  int64_t delta_us;
+  switch (event_code) {
+  case INPUT_REL_X:
+    data->x.raw_delta = event_value;
+    delta_ticks = now - data->x.time;
+    data->x.time = now;
+    delta_us = delta_ticks_to_us(delta_ticks, config->event_interval * 800);
+
+    if (delta_us != 0) {
+      fp vel = vel_from_dpdt(event_value, delta_us);
+      data->x.value = vel;
+    }
+    break;
+  case INPUT_REL_Y:
+    data->y.raw_delta = event_value;
+    delta_ticks = now - data->y.time;
+    data->y.time = now;
+    delta_us = delta_ticks_to_us(delta_ticks, config->event_interval * 800);
+
+    if (delta_us != 0) {
+      fp vel = vel_from_dpdt(event_value, delta_us);
+      data->y.value = vel;
+    }
+    break;
+  }
   if (event->sync) {
-    k_work_cancel_delayable(&data->tick_work);
     LOG_DBG("X vel: %d, Y vel: %d", i32_from(data->x.value),
             i32_from(data->y.value));
+    if (config->invert_x) {
+      data->x.raw_delta *= -1;
+    }
+    if (config->invert_y) {
+      data->y.raw_delta *= -1;
+    }
+    if (config->swap_xy) {
+      swap(&data->x.raw_delta, &data->y.raw_delta);
+    }
     if (data->x.raw_delta != 0 || data->y.raw_delta != 0) {
-      if (config->invert_x) {
-        data->x.raw_delta *= -1;
-      }
-      if (config->invert_y) {
-        data->y.raw_delta *= -1;
-      }
-      if (config->swap_xy) {
-        swap(&data->x.raw_delta, &data->y.raw_delta);
-      }
       switch (config->map_as) {
       case Cursor:
         zmk_hid_mouse_movement_set(data->x.raw_delta, data->y.raw_delta);
@@ -244,33 +243,22 @@ static int kinetic_xy_handle_event(const struct device *device,
         zmk_hid_mouse_scroll_set(0, 0);
         break;
       }
-      // data->x.raw_delta = 0;
-      // data->y.raw_delta = 0;
+    }
+    // data->x.raw_delta = 0;
+    // data->y.raw_delta = 0;
+
+    if (is_above_threshold(config->trigger_threshold, data)) {
+      k_work_reschedule(&data->tick_work, K_MSEC(config->event_delay));
+    } else {
+      k_work_cancel_delayable(&data->tick_work);
     }
   }
 
-  if (event_type == INPUT_EV_ABS && event_code == INPUT_ABS_Z) {
-    int32_t z_prev = data->z_val;
-    data->z_val = event_value;
-    bool finger_lifted = z_prev != 0 && data->z_val == 0;
-    if (is_enabled(config) && finger_lifted &&
-        is_above_threshold(config->trigger_threshold, data)) {
-      LOG_DBG("starting kinetic movement");
-      k_work_reschedule(&data->tick_work, K_MSEC(config->event_interval));
-    }
-  }
-
-  if (event_type == INPUT_EV_REL) {
-    switch (event_code) {
-    case INPUT_REL_X:
-    case INPUT_REL_Y:
-      return ZMK_INPUT_PROC_STOP;
-    default:
-      return ZMK_INPUT_PROC_CONTINUE;
-    }
-  } else if (event_type == INPUT_EV_ABS && event_code == INPUT_ABS_Z) {
+  switch (event_code) {
+  case INPUT_REL_X:
+  case INPUT_REL_Y:
     return ZMK_INPUT_PROC_STOP;
-  } else {
+  default:
     return ZMK_INPUT_PROC_CONTINUE;
   }
 }
@@ -290,6 +278,7 @@ static const struct zmk_input_processor_driver_api
           .invert_x = DT_INST_PROP(n, invert_x),                               \
           .invert_y = DT_INST_PROP(n, invert_y),                               \
           .swap_xy = DT_INST_PROP(n, swap_xy),                                 \
+          .event_delay = DT_INST_PROP(n, event_delay),                         \
           .event_interval = DT_INST_PROP(n, event_interval),                   \
           .decay_rate = DT_INST_PROP(n, decay_rate),                           \
           .clamp_threshold = DT_INST_PROP(n, clamp_threshold),                 \

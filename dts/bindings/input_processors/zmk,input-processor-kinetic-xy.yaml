@@ -31,6 +31,15 @@ properties:
     type: boolean
     description: Swap X and Y.
 
+  event-delay:
+    type: int
+    required: true
+    description: |
+      Initial delay in milliseconds after an input event before
+      kinetic movement begins. Prevents simulated events from
+      clashing with real input events. Should be higher than
+      report rate of the device.
+
   event-interval:
     type: int
     required: true
@@ -40,6 +49,7 @@ properties:
       to iron out irregular event timings.
       Try to find the exact update rate. Example link of finding it:
       https://www.mouser.com/pdfDocs/InterfaceSPIandI2C.pdf
+
   decay-rate:
     type: int
     required: true

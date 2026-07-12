@@ -45,12 +45,15 @@ properties:
     required: true
     description: |
       Interval in milliseconds between kinetic simulation ticks.
-
+      80% value of this also sets minimum delta time between events
+      to iron out irregular event timings.
+      Try to find the exact update rate. Example link of finding it:
+      https://www.mouser.com/pdfDocs/InterfaceSPIandI2C.pdf
   decay-rate:
     type: int
     required: true
     description: |
-      Decay rate value used by decay function per `event-interval` in per mille.
+      Decay rate value per `event-interval` in per mille.
       Should be 0(no friction) to 1000(infinity friction).
 
   clamp-threshold:

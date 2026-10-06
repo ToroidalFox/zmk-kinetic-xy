@@ -70,6 +70,7 @@ struct input_processor_kinetic_xy_data {
 
   struct axis x;
   struct axis y;
+  int32_t z;
 };
 
 static bool KINETIC_XY_TOGGLE_SLOTS
@@ -167,6 +168,7 @@ static int input_processor_kinetic_xy_init(const struct device *device) {
   data->device = device;
   data->x = (struct axis){.value = 0, .rem = 0, .time = now};
   data->y = (struct axis){.value = 0, .rem = 0, .time = now};
+  data->z = 0;
 
   k_work_init_delayable(&data->tick_work, kinetic_xy_handle_work);
   return 0;
@@ -187,37 +189,44 @@ static int kinetic_xy_handle_event(const struct device *device,
   const uint16_t event_code = event->code;
   const int32_t event_value = event->value;
 
-  if (event_type != INPUT_EV_REL) {
+  int64_t now;
+  int64_t delta_ticks;
+  int64_t delta_us;
+
+  if (event_type == INPUT_EV_REL) {
+    now = k_uptime_ticks();
+    switch (event_code) {
+    case INPUT_REL_X:
+      data->x.raw_delta = event_value;
+      delta_ticks = now - data->x.time;
+      data->x.time = now;
+      delta_us = delta_ticks_to_us(delta_ticks, config->event_interval * 800);
+
+      if (delta_us != 0) {
+        fp vel = vel_from_dpdt(event_value, delta_us);
+        data->x.value = vel;
+      }
+      break;
+    case INPUT_REL_Y:
+      data->y.raw_delta = event_value;
+      delta_ticks = now - data->y.time;
+      data->y.time = now;
+      delta_us = delta_ticks_to_us(delta_ticks, config->event_interval * 800);
+
+      if (delta_us != 0) {
+        fp vel = vel_from_dpdt(event_value, delta_us);
+        data->y.value = vel;
+      }
+      break;
+    default:
+      return ZMK_INPUT_PROC_CONTINUE;
+    }
+  } else if (event_type == INPUT_EV_ABS && event_code == INPUT_ABS_Z) {
+    data->z = event_value;
+  } else {
     return ZMK_INPUT_PROC_CONTINUE;
   }
 
-  int64_t now = k_uptime_ticks();
-  int64_t delta_ticks;
-  int64_t delta_us;
-  switch (event_code) {
-  case INPUT_REL_X:
-    data->x.raw_delta = event_value;
-    delta_ticks = now - data->x.time;
-    data->x.time = now;
-    delta_us = delta_ticks_to_us(delta_ticks, config->event_interval * 800);
-
-    if (delta_us != 0) {
-      fp vel = vel_from_dpdt(event_value, delta_us);
-      data->x.value = vel;
-    }
-    break;
-  case INPUT_REL_Y:
-    data->y.raw_delta = event_value;
-    delta_ticks = now - data->y.time;
-    data->y.time = now;
-    delta_us = delta_ticks_to_us(delta_ticks, config->event_interval * 800);
-
-    if (delta_us != 0) {
-      fp vel = vel_from_dpdt(event_value, delta_us);
-      data->y.value = vel;
-    }
-    break;
-  }
   if (event->sync) {
     LOG_DBG("X vel: %d, Y vel: %d", i32_from(data->x.value),
             i32_from(data->y.value));
@@ -247,7 +256,7 @@ static int kinetic_xy_handle_event(const struct device *device,
     // data->x.raw_delta = 0;
     // data->y.raw_delta = 0;
 
-    if (is_above_threshold(config->trigger_threshold, data)) {
+    if (data->z == 0 && is_above_threshold(config->trigger_threshold, data)) {
       k_work_reschedule(&data->tick_work, K_MSEC(config->event_delay));
     } else {
       k_work_cancel_delayable(&data->tick_work);
@@ -257,6 +266,7 @@ static int kinetic_xy_handle_event(const struct device *device,
   switch (event_code) {
   case INPUT_REL_X:
   case INPUT_REL_Y:
+  case INPUT_ABS_Z:
     return ZMK_INPUT_PROC_STOP;
   default:
     return ZMK_INPUT_PROC_CONTINUE;

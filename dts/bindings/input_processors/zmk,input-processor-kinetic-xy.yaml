@@ -21,16 +21,6 @@ properties:
       - "cursor"
       - "scroll"
 
-  invert-x:
-    type: boolean
-    description: Invert X.
-  invert-y:
-    type: boolean
-    description: Invert Y.
-  swap-xy:
-    type: boolean
-    description: Swap X and Y.
-
   event-delay:
     type: int
     required: true

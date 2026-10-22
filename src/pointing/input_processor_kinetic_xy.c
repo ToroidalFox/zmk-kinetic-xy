@@ -13,11 +13,6 @@
 
 LOG_MODULE_REGISTER(input_processor_kinetic_xy, CONFIG_ZMK_LOG_LEVEL);
 
-static inline void swap(int32_t *a, int32_t *b) {
-  int32_t temp = *a;
-  *a = *b;
-  *b = temp;
-}
 static inline int32_t i32_sat_mul(int32_t a, int32_t b) {
   int32_t result;
   if (__builtin_mul_overflow(a, b, &result)) {
@@ -46,9 +41,6 @@ struct input_processor_kinetic_xy_config {
 
   enum MapAs map_as;
 
-  bool invert_x;
-  bool invert_y;
-  bool swap_xy;
   uint32_t event_delay;
   uint32_t event_interval;
   int32_t decay_rate;
@@ -126,16 +118,6 @@ static void kinetic_xy_handle_work(struct k_work *work) {
     data->y.rem = (dy - (fp_from(dy_int)));
     LOG_DBG("vel x: %d, y: %d", dx_int, dy_int);
 
-    if (config->invert_x) {
-      dx_int *= -1;
-    }
-    if (config->invert_y) {
-      dy_int *= -1;
-    }
-    if (config->swap_xy) {
-      swap(&dx_int, &dy_int);
-    }
-
     if (dx_int != 0 || dy_int != 0) {
       switch (config->map_as) {
       case Cursor:
@@ -189,56 +171,30 @@ static int kinetic_xy_handle_event(const struct device *device,
   const uint16_t event_code = event->code;
   const int32_t event_value = event->value;
 
-  int64_t now;
+  int64_t now = k_uptime_ticks();
   int64_t delta_ticks;
   int64_t delta_us;
 
-  if (event_type == INPUT_EV_REL) {
-    now = k_uptime_ticks();
-    switch (event_code) {
-    case INPUT_REL_X:
-      data->x.raw_delta = event_value;
-      delta_ticks = now - data->x.time;
-      data->x.time = now;
-      delta_us = delta_ticks_to_us(delta_ticks, config->event_interval * 800);
+  if (event_type == INPUT_EV_REL && event_code == INPUT_REL_X) {
+    data->x.raw_delta = event_value;
+    delta_ticks = now - data->x.time;
+    data->x.time = now;
+    delta_us = delta_ticks_to_us(delta_ticks, config->event_interval * 800);
 
-      if (delta_us != 0) {
-        fp vel = vel_from_dpdt(event_value, delta_us);
-        data->x.value = vel;
-      }
-      break;
-    case INPUT_REL_Y:
-      data->y.raw_delta = event_value;
-      delta_ticks = now - data->y.time;
-      data->y.time = now;
-      delta_us = delta_ticks_to_us(delta_ticks, config->event_interval * 800);
+    fp vel = vel_from_dpdt(event_value, delta_us);
+    data->x.value = vel;
+  } else if (event_type == INPUT_EV_REL && event_code == INPUT_REL_Y) {
+    data->y.raw_delta = event_value;
+    delta_ticks = now - data->y.time;
+    data->y.time = now;
+    delta_us = delta_ticks_to_us(delta_ticks, config->event_interval * 800);
 
-      if (delta_us != 0) {
-        fp vel = vel_from_dpdt(event_value, delta_us);
-        data->y.value = vel;
-      }
-      break;
-    default:
-      return ZMK_INPUT_PROC_CONTINUE;
-    }
+    fp vel = vel_from_dpdt(event_value, delta_us);
+    data->y.value = vel;
   } else if (event_type == INPUT_EV_ABS && event_code == INPUT_ABS_Z) {
     data->z = event_value;
-  } else {
-    return ZMK_INPUT_PROC_CONTINUE;
-  }
-
-  if (event->sync) {
     LOG_DBG("X vel: %d, Y vel: %d", i32_from(data->x.value),
             i32_from(data->y.value));
-    if (config->invert_x) {
-      data->x.raw_delta *= -1;
-    }
-    if (config->invert_y) {
-      data->y.raw_delta *= -1;
-    }
-    if (config->swap_xy) {
-      swap(&data->x.raw_delta, &data->y.raw_delta);
-    }
     if (data->x.raw_delta != 0 || data->y.raw_delta != 0) {
       switch (config->map_as) {
       case Cursor:
@@ -253,24 +209,15 @@ static int kinetic_xy_handle_event(const struct device *device,
         break;
       }
     }
-    // data->x.raw_delta = 0;
-    // data->y.raw_delta = 0;
-
-    if (data->z == 0 && is_above_threshold(config->trigger_threshold, data)) {
+    if (data->z <= 0 && is_above_threshold(config->trigger_threshold, data)) {
       k_work_reschedule(&data->tick_work, K_MSEC(config->event_delay));
     } else {
       k_work_cancel_delayable(&data->tick_work);
     }
-  }
-
-  switch (event_code) {
-  case INPUT_REL_X:
-  case INPUT_REL_Y:
-  case INPUT_ABS_Z:
-    return ZMK_INPUT_PROC_STOP;
-  default:
+  } else {
     return ZMK_INPUT_PROC_CONTINUE;
   }
+  return ZMK_INPUT_PROC_STOP;
 }
 
 static const struct zmk_input_processor_driver_api
@@ -285,9 +232,6 @@ static const struct zmk_input_processor_driver_api
       input_processor_kinetic_xy_config_##n = {                                \
           .toggle_slot = DT_INST_PROP(n, toggle_slot),                         \
           .map_as = DT_INST_ENUM_IDX(n, map_as),                               \
-          .invert_x = DT_INST_PROP(n, invert_x),                               \
-          .invert_y = DT_INST_PROP(n, invert_y),                               \
-          .swap_xy = DT_INST_PROP(n, swap_xy),                                 \
           .event_delay = DT_INST_PROP(n, event_delay),                         \
           .event_interval = DT_INST_PROP(n, event_interval),                   \
           .decay_rate = DT_INST_PROP(n, decay_rate),                           \

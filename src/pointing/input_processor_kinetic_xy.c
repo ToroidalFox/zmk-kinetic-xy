@@ -27,7 +27,7 @@ typedef int32_t fp;
 static inline fp fp_from(int32_t val) { return val << FP_SHIFT; }
 static inline int32_t i32_from(fp val) { return val / FP_ONE; }
 static inline fp vel_from_dpdt(int32_t dp, int64_t dt_us) {
-  return CLAMP(((int64_t)dp << FP_SHIFT) * USEC_PER_SEC / dt_us, INT32_MIN,
+  return CLAMP(((int64_t)dp << FP_SHIFT) * USEC_PER_SEC / dt_us, INT32_MIN + 1,
                INT32_MAX);
 }
 
@@ -52,6 +52,7 @@ struct input_processor_kinetic_xy_config {
 struct axis {
   fp value;
   fp rem;
+  fp prevs[3];
   int32_t raw_delta;
   int64_t time;
 };
@@ -63,6 +64,7 @@ struct input_processor_kinetic_xy_data {
   struct axis x;
   struct axis y;
   int32_t z;
+  int prev_idx;
 };
 
 static bool KINETIC_XY_TOGGLE_SLOTS
@@ -96,7 +98,6 @@ static void kinetic_xy_handle_work(struct k_work *work) {
       CONTAINER_OF(_work, struct input_processor_kinetic_xy_data, tick_work);
   const struct device *device = data->device;
   const struct input_processor_kinetic_xy_config *config = device->config;
-  int64_t now = k_uptime_ticks();
 
   if (!is_enabled(config)) {
     data->x = (struct axis){.value = 0, .rem = 0};
@@ -151,9 +152,45 @@ static int input_processor_kinetic_xy_init(const struct device *device) {
   data->x = (struct axis){.value = 0, .rem = 0, .time = now};
   data->y = (struct axis){.value = 0, .rem = 0, .time = now};
   data->z = 0;
+  for (int i = 0; i < 3; i++) {
+    data->x.prevs[i] = 0;
+    data->y.prevs[i] = 0;
+  }
+  data->prev_idx = 0;
 
   k_work_init_delayable(&data->tick_work, kinetic_xy_handle_work);
   return 0;
+}
+
+static inline fp fp_abs(fp value) { return value < 0 ? -value : value; }
+// returns value from list of values that has highest absolute value.
+// but, returns 0 when all of the values does not have same sign.
+// 1, 3, 2 -> 3
+// -1, -3, -2 -> -3
+// 1, -2, 0 -> 0
+static inline fp max_abs(fp *values, const int len) {
+  // sign check
+  int nonzero_i = 0;
+  while (nonzero_i < len && values[nonzero_i] == 0)
+    nonzero_i++;
+  if (nonzero_i >= len) {
+    return 0;
+  }
+  for (int i = nonzero_i + 1; i < len; i++) {
+    if (values[i] != 0 && (values[nonzero_i] < 0) != (values[i] < 0))
+      return 0;
+  }
+
+  fp max_abs = fp_abs(values[nonzero_i]);
+  int max_abs_idx = nonzero_i;
+  for (int i = nonzero_i + 1; i < len; i++) {
+    fp abs_value = fp_abs(values[i]);
+    if (max_abs < abs_value) {
+      max_abs = abs_value;
+      max_abs_idx = i;
+    }
+  }
+  return values[max_abs_idx];
 }
 
 static int kinetic_xy_handle_event(const struct device *device,
@@ -209,10 +246,25 @@ static int kinetic_xy_handle_event(const struct device *device,
         break;
       }
     }
-    if (data->z <= 0 && is_above_threshold(config->trigger_threshold, data)) {
-      k_work_reschedule(&data->tick_work, K_MSEC(config->event_delay));
-    } else {
+    if (data->z > 0) {
+      data->x.prevs[data->prev_idx] = data->x.value;
+      data->y.prevs[data->prev_idx] = data->y.value;
+      data->prev_idx = (data->prev_idx + 1) % 3;
       k_work_cancel_delayable(&data->tick_work);
+    } else {
+      data->x.value = max_abs(data->x.prevs, 3);
+      data->y.value = max_abs(data->y.prevs, 3);
+      // reset after fetching value
+      for (int i = 0; i < 3; i++) {
+        data->x.prevs[i] = 0;
+        data->y.prevs[i] = 0;
+      }
+      data->prev_idx = 0;
+      if (is_above_threshold(config->trigger_threshold, data)) {
+        k_work_reschedule(&data->tick_work, K_MSEC(config->event_delay));
+      } else {
+        k_work_cancel_delayable(&data->tick_work);
+      }
     }
   } else {
     return ZMK_INPUT_PROC_CONTINUE;
